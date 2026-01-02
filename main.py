@@ -109,6 +109,11 @@ def index():
     facturas = obtener_facturas()
     return render_template("index.html", facturas=facturas)
 
+# 🔒 CATCH-ALL → evita 404 en Railway
+@app.route("/<path:path>")
+def catch_all(path):
+    return redirect("/")
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
