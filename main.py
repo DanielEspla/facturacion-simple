@@ -17,10 +17,17 @@ def guardar_facturas(facturas):
     with open(FACTURAS_FILE, "w") as f:
         json.dump(facturas, f, indent=4)
 
-def siguiente_numero_factura(facturas):
-    if not facturas:
-        return 1
-    return max(f["numero"] for f in facturas) + 1
+def siguiente_numero_factura(facturas, año_actual):
+    facturas_del_año = [
+        f for f in facturas if f["numero"].startswith(f"{año_actual}-")
+    ]
+    if not facturas_del_año:
+        return f"{año_actual}-1"
+
+    ultimo = max(
+        int(f["numero"].split("-")[1]) for f in facturas_del_año
+    )
+    return f"{año_actual}-{ultimo + 1}"
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -34,8 +41,11 @@ def index():
         iva = round(base * 0.21, 2)
         total = round(base + iva, 2)
 
-        numero = siguiente_numero_factura(facturas)
-        fecha = date.today().isoformat()
+        hoy = date.today()
+        fecha = hoy.strftime("%d-%m-%Y")
+        año_actual = hoy.year
+
+        numero = siguiente_numero_factura(facturas, año_actual)
 
         factura = {
             "numero": numero,
