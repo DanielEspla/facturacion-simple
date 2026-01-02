@@ -1,50 +1,36 @@
-import os
 from flask import Flask, render_template, request, redirect
-from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+import json
+import os
+from datetime import date
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL no existe en el entorno")
+DATA_FILE = "facturas.json"
 
-engine = create_engine(DATABASE_URL)
-Session = sessionmaker(bind=engine)
-session = Session()
+def cargar_facturas():
+    if not os.path.exists(DATA_FILE):
+        return []
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return []
 
-Base = declarative_base()
+def guardar_facturas(facturas):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(facturas, f, indent=2, ensure_ascii=False)
 
-class Factura(Base):
-    __tablename__ = "facturas"
-
-    id = Column(Integer, primary_key=True)
-    numero = Column(String, nullable=False)
-    fecha = Column(Date, nullable=False)
-    cliente = Column(String, nullable=False)
-    concepto = Column(String, nullable=False)
-    base = Column(Float, nullable=False)
-    iva = Column(Float, nullable=False)
-    total = Column(Float, nullable=False)
-
-Base.metadata.create_all(engine)
-
-def siguiente_numero_factura():
-    year = datetime.now().year
-    ultima = session.query(Factura).filter(
-        Factura.numero.like(f"{year}-%")
-    ).order_by(Factura.id.desc()).first()
-
-    if not ultima:
+def siguiente_numero_factura(facturas, year):
+    del_año = [f for f in facturas if f["numero"].startswith(f"{year}-")]
+    if not del_año:
         return f"{year}-1"
-
-    ultimo_num = int(ultima.numero.split("-")[1])
-    return f"{year}-{ultimo_num + 1}"
+    ultimo = max(int(f["numero"].split("-")[1]) for f in del_año)
+    return f"{year}-{ultimo + 1}"
 
 @app.route("/", methods=["GET", "POST"])
 def index():
+    facturas = cargar_facturas()
+
     if request.method == "POST":
         cliente = request.form["cliente"]
         concepto = request.form["concepto"]
@@ -53,23 +39,25 @@ def index():
         iva = round(base * 0.21, 2)
         total = round(base + iva, 2)
 
-        factura = Factura(
-            numero=siguiente_numero_factura(),
-            fecha=datetime.now().date(),
-            cliente=cliente,
-            concepto=concepto,
-            base=base,
-            iva=iva,
-            total=total
-        )
+        hoy = date.today()
+        fecha = hoy.strftime("%d-%m-%Y")
+        numero = siguiente_numero_factura(facturas, hoy.year)
 
-        session.add(factura)
-        session.commit()
+        facturas.append({
+            "numero": numero,
+            "fecha": fecha,
+            "cliente": cliente,
+            "concepto": concepto,
+            "base": base,
+            "iva": iva,
+            "total": total
+        })
 
+        guardar_facturas(facturas)
         return redirect("/")
 
-    facturas = session.query(Factura).order_by(Factura.id).all()
     return render_template("index.html", facturas=facturas)
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
