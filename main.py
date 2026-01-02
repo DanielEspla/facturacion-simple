@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect
 import json
 import os
+from datetime import date
 
 app = Flask(__name__)
 
@@ -16,6 +17,11 @@ def guardar_facturas(facturas):
     with open(FACTURAS_FILE, "w") as f:
         json.dump(facturas, f, indent=4)
 
+def siguiente_numero_factura(facturas):
+    if not facturas:
+        return 1
+    return max(f["numero"] for f in facturas) + 1
+
 @app.route("/", methods=["GET", "POST"])
 def index():
     facturas = cargar_facturas()
@@ -24,10 +30,16 @@ def index():
         cliente = request.form["cliente"]
         concepto = request.form["concepto"]
         base = float(request.form["base"])
+
         iva = round(base * 0.21, 2)
         total = round(base + iva, 2)
 
+        numero = siguiente_numero_factura(facturas)
+        fecha = date.today().isoformat()
+
         factura = {
+            "numero": numero,
+            "fecha": fecha,
             "cliente": cliente,
             "concepto": concepto,
             "base": base,
