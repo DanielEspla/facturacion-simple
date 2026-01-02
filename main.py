@@ -3,8 +3,10 @@ import os
 from datetime import date
 import psycopg2
 
-app = Flask(__name__)
+# Flask configurado correctamente para Railway
+app = Flask(__name__, template_folder="templates")
 
+# Variable que Railway inyecta automáticamente
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_conn():
@@ -41,8 +43,9 @@ def obtener_facturas():
     cur.close()
     conn.close()
 
-    return [
-        {
+    facturas = []
+    for r in rows:
+        facturas.append({
             "numero": r[0],
             "fecha": r[1],
             "cliente": r[2],
@@ -50,61 +53,24 @@ def obtener_facturas():
             "base": float(r[4]),
             "iva": float(r[5]),
             "total": float(r[6]),
-        }
-        for r in rows
-    ]
+        })
+    return facturas
 
-def siguiente_numero_factura(año_actual):
+def siguiente_numero_factura(año):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT numero FROM facturas
+        SELECT numero
+        FROM facturas
         WHERE numero LIKE %s
         ORDER BY id DESC
         LIMIT 1;
-    """, (f"{año_actual}-%",))
+    """, (f"{año}-%",))
     row = cur.fetchone()
     cur.close()
     conn.close()
 
     if not row:
-        return f"{año_actual}-1"
+        return f"{año}-1"
 
-    ultimo = int(row[0].split("-")[1])
-    return f"{año_actual}-{ultimo + 1}"
-
-@app.route("/", methods=["GET", "POST"])
-def index():
-    init_db()
-
-    if request.method == "POST":
-        cliente = request.form["cliente"]
-        concepto = request.form["concepto"]
-        base = float(request.form["base"])
-
-        iva = round(base * 0.21, 2)
-        total = round(base + iva, 2)
-
-        hoy = date.today()
-        fecha = hoy.strftime("%d-%m-%Y")
-        año_actual = hoy.year
-        numero = siguiente_numero_factura(año_actual)
-
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO facturas (numero, fecha, cliente, concepto, base, iva, total)
-            VALUES (%s, %s, %s, %s, %s, %s, %s);
-        """, (numero, fecha, cliente, concepto, base, iva, total))
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        return redirect("/")
-
-    facturas = obtener_facturas()
-    return render_template("index.html", facturas=facturas)
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    ul
