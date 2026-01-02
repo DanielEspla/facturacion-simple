@@ -1,37 +1,81 @@
 from flask import Flask, render_template, request, redirect
-import json
 import os
 from datetime import date
+import psycopg2
 
 app = Flask(__name__)
 
-FACTURAS_FILE = "facturas.json"
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-def cargar_facturas():
-    if not os.path.exists(FACTURAS_FILE):
-        return []
-    with open(FACTURAS_FILE, "r") as f:
-        return json.load(f)
+def get_conn():
+    return psycopg2.connect(DATABASE_URL)
 
-def guardar_facturas(facturas):
-    with open(FACTURAS_FILE, "w") as f:
-        json.dump(facturas, f, indent=4)
+def init_db():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS facturas (
+            id SERIAL PRIMARY KEY,
+            numero TEXT NOT NULL,
+            fecha TEXT NOT NULL,
+            cliente TEXT NOT NULL,
+            concepto TEXT NOT NULL,
+            base NUMERIC NOT NULL,
+            iva NUMERIC NOT NULL,
+            total NUMERIC NOT NULL
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
 
-def siguiente_numero_factura(facturas, año_actual):
-    facturas_del_año = [
-        f for f in facturas if f["numero"].startswith(f"{año_actual}-")
+def obtener_facturas():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT numero, fecha, cliente, concepto, base, iva, total
+        FROM facturas
+        ORDER BY id ASC;
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "numero": r[0],
+            "fecha": r[1],
+            "cliente": r[2],
+            "concepto": r[3],
+            "base": float(r[4]),
+            "iva": float(r[5]),
+            "total": float(r[6]),
+        }
+        for r in rows
     ]
-    if not facturas_del_año:
+
+def siguiente_numero_factura(año_actual):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT numero FROM facturas
+        WHERE numero LIKE %s
+        ORDER BY id DESC
+        LIMIT 1;
+    """, (f"{año_actual}-%",))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
         return f"{año_actual}-1"
 
-    ultimo = max(
-        int(f["numero"].split("-")[1]) for f in facturas_del_año
-    )
+    ultimo = int(row[0].split("-")[1])
     return f"{año_actual}-{ultimo + 1}"
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    facturas = cargar_facturas()
+    init_db()
 
     if request.method == "POST":
         cliente = request.form["cliente"]
@@ -44,24 +88,21 @@ def index():
         hoy = date.today()
         fecha = hoy.strftime("%d-%m-%Y")
         año_actual = hoy.year
+        numero = siguiente_numero_factura(año_actual)
 
-        numero = siguiente_numero_factura(facturas, año_actual)
-
-        factura = {
-            "numero": numero,
-            "fecha": fecha,
-            "cliente": cliente,
-            "concepto": concepto,
-            "base": base,
-            "iva": iva,
-            "total": total
-        }
-
-        facturas.append(factura)
-        guardar_facturas(facturas)
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO facturas (numero, fecha, cliente, concepto, base, iva, total)
+            VALUES (%s, %s, %s, %s, %s, %s, %s);
+        """, (numero, fecha, cliente, concepto, base, iva, total))
+        conn.commit()
+        cur.close()
+        conn.close()
 
         return redirect("/")
 
+    facturas = obtener_facturas()
     return render_template("index.html", facturas=facturas)
 
 if __name__ == "__main__":
