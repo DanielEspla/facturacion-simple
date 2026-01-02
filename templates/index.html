@@ -24,6 +24,8 @@
 
 <table>
     <tr>
+        <th>Nº</th>
+        <th>Fecha</th>
         <th>Cliente</th>
         <th>Concepto</th>
         <th>Base</th>
@@ -32,6 +34,8 @@
     </tr>
     {% for f in facturas %}
     <tr>
+        <td>{{ f.numero }}</td>
+        <td>{{ f.fecha }}</td>
         <td>{{ f.cliente }}</td>
         <td>{{ f.concepto }}</td>
         <td>{{ f.base }} €</td>
